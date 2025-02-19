@@ -9,17 +9,23 @@ wss.on('connection', (ws) => {
 
   // Handle incoming WebSocket messages (servo positions from React app)
   ws.on('message', (message) => {
-    // Ensure the message is a string before calling split()
-    const messageString = String(message);
+    // Ensure the message is a valid JSON string (not an array directly)
+    let positionsString;
+    try {
+      positionsString = JSON.parse(message);
+    } catch (e) {
+      console.error('Error parsing incoming message:', e);
+      return;
+    }
 
-    console.log('Received message from client:', messageString);
-
-    // Convert the message (comma-separated string) into an array of positions
-    const positions = messageString.split(',').map(Number);
-    console.log('Positions to send to Arduino:', positions);
-
-    // Send the positions to the Arduino
-    sendToArduino(positions);
+    // Check that the positions array is valid and contains 5 elements
+    if (Array.isArray(positionsString) && positionsString.length === 5) {
+      console.log('Received message from client:', positionsString);
+      console.log('Positions to send to Arduino:', positionsString);
+      sendToArduino(positionsString);
+    } else {
+      console.error('Invalid message format or missing data');
+    }
   });
 
   ws.on('close', () => {
@@ -43,13 +49,20 @@ port.on('open', () => {
 });
 
 // Send data to Arduino
-function sendToArduino(positions) {
-  // Convert positions to a string, e.g., "90,90,90,45,90\n"
-  const message = positions.join(',') + '\n';
-  console.log('Sending to Arduino:', message);
+function sendToArduino(positionsArray) {
+  // Create a buffer to send the servo positions
+  const buffer = Buffer.alloc(10); // 5 servos, 2 bytes per servo
+
+  // Fill the buffer with 2-byte values
+  for (let i = 0; i < positionsArray.length; i++) {
+    const pos = positionsArray[i];
+    buffer.writeUInt16LE(pos, i * 2); // Write each 2-byte integer into the buffer
+  }
+
+  console.log('Sending to Arduino:', buffer);
 
   // Write the message to the serial port (sending data to Arduino)
-  port.write(message, (err) => {
+  port.write(buffer, (err) => {
     if (err) {
       console.log('Error on write:', err);
     }
